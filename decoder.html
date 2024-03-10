@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>requestVideoFrameCallback</title>
+</head>
+<body>
+<div>
+    <button>start</button>
+    <button id="seekToStart">Seek to start</button>
+</div>
+<!-- <select disabled></select> -->
+<canvas></canvas>
+<div id="control">
+    <div id="runner">
+
+    </div>
+</div>
+<style>
+    #control {
+        position: relative;
+        border: 1px solid black;
+        height: 20px;
+    }
+
+    #runner {
+        position: absolute;
+        background-color: black;
+        border-radius: 100%;
+        width: 20px;
+        height: 100%;
+    }
+</style>
+<script type="module">
+    const frames = [];
+    const button = document.querySelector("button");
+    const select = document.querySelector("select");
+    const canvas = document.querySelector("canvas");
+    const ctx = canvas.getContext("2d");
+
+    const runner = document.getElementById("runner");
+
+    let video = null;
+
+    canvas.width = 720;
+    canvas.height = 480;
+    ctx.font = "30px Comic Sans MS";
+    ctx.fillStyle = "red";
+
+    document.querySelector("#seekToStart").onclick = () => {
+        video.currentTime = 0;
+    };
+
+    const chooseFrame = (metadata, timestamp) => {
+        if (metadata.length == 0)
+            return null;
+
+        let minTimeDelta = Number.MAX_VALUE;
+        let frameIndex = -1;
+
+        for (let i = 0; i < metadata.length; i++) {
+            let timeDelta = Math.abs(timestamp - metadata[i][0]);
+
+            if (timeDelta < minTimeDelta) {
+                minTimeDelta = timeDelta;
+                frameIndex = i;
+            }
+            else break;
+        }        
+
+        return metadata[frameIndex][1];
+    }
+    
+    const renderFrame = (frame, timestamp, mask = null) => {
+        // ctx.drawImage(frame, 0, 0);
+        ctx.drawImage(frame, 0, 0, 1920, 1080, 0, 0, 720, 480);
+        ctx.fillText(`WEB pts: ${timestamp}`, 10, 50);
+        if (mask)
+            ctx.fillText(mask, 150, 150);
+    };
+
+    button.onclick = async(evt) => {
+        if (HTMLVideoElement.prototype.requestVideoFrameCallback) {
+            let stopped = false;
+
+            const nnMetadata = await getMetadata();
+            video = await getVideoElement();
+
+            const drawingLoop = async(now, metadata) => {
+                // console.log('now', now, 'metadata', metadata);
+                // const bitmap = await createImageBitmap(video);
+                // const index = frames.length;
+                // frames.push(bitmap);
+                // select.append(new Option("Frame #" + (index + 1), index));
+
+                const timestamp = parseInt(metadata.mediaTime * 1000);
+                const nnMeta = chooseFrame(nnMetadata, timestamp);
+                renderFrame(video, timestamp, nnMeta);
+                // console.log(video.currentTime, video.duration, video.currentTime / video.duration)
+                runner.style.left = `${(video.currentTime / video.duration) * 100}%`;
+
+                if (!video.ended && !stopped) {
+                    video.requestVideoFrameCallback(drawingLoop);
+                } else {
+                    // select.disabled = false;
+                    video.pause();
+                }
+            };
+
+            // the last call to rVFC may happen before .ended is set but never resolve
+            // video.onended = (evt) => select.disabled = false;
+            video.requestVideoFrameCallback(drawingLoop);
+            button.onclick = (evt) => {
+                stopped = true;
+            }
+            button.textContent = "stop";
+        } else {
+            console.error("your browser doesn't support this API yet");
+        }
+    };
+
+    async function getMetadata() {
+        const response = await fetch('http://localhost:8000/metadata.json');
+        return await response.json()
+    }
+
+    async function getVideoElement() {
+        const video = document.createElement("video");
+        video.crossOrigin = "anonymous";
+        video.src = "https://upload.wikimedia.org/wikipedia/commons/a/a4/BBH_gravitational_lensing_of_gw150914.webm";
+        video.width = 720;
+        video.height = 480;
+        video.controls = true;
+        // video.src = "video.webm";
+        document.body.append(video);
+        await video.play();
+        return video;
+    }
+
+
+    // const frames = [];
+    // const button = document.querySelector("button");
+    // const select = document.querySelector("select");
+    // const canvas = document.querySelector("canvas");
+    // const ctx = canvas.getContext("2d");
+
+    // button.onclick = async(evt) => {
+    //     if (window.MediaStreamTrackProcessor) {
+    //         let stopped = false;
+    //         const track = await getVideoTrack();
+    //         const processor = new MediaStreamTrackProcessor(track);
+    //         const reader = processor.readable.getReader();
+    //         readChunk();
+
+    //         function readChunk() {
+    //             reader.read().then(async({ done, value }) => {
+    //             if (value) {
+    //                 console.log(value);
+    //                 // const bitmap = await createImageBitmap(value);
+    //                 // const index = frames.length;
+    //                 // frames.push(bitmap);
+    //                 // select.append(new Option("Frame #" + (index + 1), index));
+    //                 value.close();
+    //             }
+    //             if (!done && !stopped) {
+    //                 readChunk();
+    //             } else {
+    //                 select.disabled = false;
+    //             }
+    //             });
+    //         }
+    //         button.onclick = (evt) => stopped = true;
+    //         button.textContent = "stop";
+    //     } else {
+    //         console.error("your browser doesn't support this API yet");
+    //     }
+    // };
+
+    // select.onchange = (evt) => {
+    //     const frame = frames[select.value];
+    //     canvas.width = frame.width;
+    //     canvas.height = frame.height;
+    //     ctx.drawImage(frame, 0, 0);
+    // };
+
+    // async function getVideoTrack() {
+    //     const video = document.createElement("video");
+    //     video.crossOrigin = "anonymous";
+    //     video.src = "https://upload.wikimedia.org/wikipedia/commons/a/a4/BBH_gravitational_lensing_of_gw150914.webm";
+    //     document.body.append(video);
+    //     await video.play();
+    //     const [track] = video.captureStream().getVideoTracks();
+    //     video.onended = (evt) => track.stop();
+    //     return track;
+    // }
+</script>
+</body>
+</html>
+
